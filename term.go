@@ -67,7 +67,6 @@ func (term Resource) Equal(other Term) bool {
 	if spec, ok := other.(*Resource); ok {
 		return term.URI == spec.URI
 	}
-
 	return false
 }
 
@@ -257,9 +256,17 @@ func term2jterm(term Term) jsonld.Term {
 	return nil
 }
 
-func encodeTerm(iterm Term) string {
+func encodeTerm(g *Graph, iterm Term) string {
 	switch term := iterm.(type) {
 	case *Resource:
+		parts := strings.Split(term.URI, ":")
+		if len(parts) > 1 {
+			p := parts[0]
+			if _, ok := g.prefix[p]; ok {
+				return fmt.Sprintf("%s", term.URI)
+			}
+			return fmt.Sprintf("<%s>", term.URI)
+		}
 		return fmt.Sprintf("<%s>", term.URI)
 	case *Literal:
 		return term.String()

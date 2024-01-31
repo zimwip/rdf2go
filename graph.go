@@ -15,6 +15,7 @@ import (
 
 // Graph structure
 type Graph struct {
+	prefix     map[string]string
 	triples    map[*Triple]bool
 	httpClient *http.Client
 	uri        string
@@ -40,6 +41,7 @@ func NewGraph(uri string, skipVerify ...bool) *Graph {
 		skip = skipVerify[0]
 	}
 	g := &Graph{
+		prefix:     make(map[string]string),
 		triples:    make(map[*Triple]bool),
 		httpClient: NewHttpClient(skip),
 		uri:        uri,
@@ -115,6 +117,11 @@ func (g *Graph) IterTriples() (ch chan *Triple) {
 	return ch
 }
 
+// Add is used to add a Prefic object to the graph
+func (g *Graph) AddPrefix(prefix, url string) {
+	g.prefix[prefix] = url
+}
+
 // Add is used to add a Triple object to the graph
 func (g *Graph) Add(t *Triple) {
 	g.triples[t] = true
@@ -170,8 +177,8 @@ func (g *Graph) All(s Term, p Term, o Term) []*Triple {
 }
 
 // Merge is used to add all the triples form another graph to this one
-func (g *Graph) Merge(toMerge *Graph){
-	for triple := range toMerge.IterTriples(){
+func (g *Graph) Merge(toMerge *Graph) {
+	for triple := range toMerge.IterTriples() {
 		g.Add(triple)
 	}
 }
@@ -260,22 +267,36 @@ func (g *Graph) Serialize(w io.Writer, mime string) error {
 func (g *Graph) serializeTurtle(w io.Writer) error {
 	var err error
 
+	_, err = fmt.Fprintf(w, "@base <%s> .\n", g.uri)
+	if err != nil {
+		return err
+	}
+	for p, v := range g.prefix {
+		_, err = fmt.Fprintf(w, "@prefix %s: <%s> .\n", p, v)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(w, "\n")
+	if err != nil {
+		return err
+	}
 	triplesBySubject := make(map[string][]*Triple)
 
 	for triple := range g.IterTriples() {
-		s := encodeTerm(triple.Subject)
+		s := encodeTerm(g, triple.Subject)
 		triplesBySubject[s] = append(triplesBySubject[s], triple)
 	}
 
 	for subject, triples := range triplesBySubject {
-		_, err = fmt.Fprintf(w, "%s\n", subject)
+		_, err = fmt.Fprintf(w, "\n%s", subject)
 		if err != nil {
 			return err
 		}
 
 		for key, triple := range triples {
-			p := encodeTerm(triple.Predicate)
-			o := encodeTerm(triple.Object)
+			p := encodeTerm(g, triple.Predicate)
+			o := encodeTerm(g, triple.Object)
 
 			if key == len(triples)-1 {
 				_, err = fmt.Fprintf(w, "  %s %s .", p, o)
